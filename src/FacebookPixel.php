@@ -31,6 +31,7 @@ class FacebookPixel
     protected EventLayer $customEventLayer;
 
     protected EventLayer $flashEventLayer;
+    protected EventLayer $inertiaEventLayer;
 
     public function __construct()
     {
@@ -41,6 +42,7 @@ class FacebookPixel
         $this->eventLayer = new EventLayer();
         $this->customEventLayer = new EventLayer();
         $this->flashEventLayer = new EventLayer();
+        $this->inertiaEventLayer = new EventLayer();
     }
 
     public function pixelId()
@@ -100,6 +102,14 @@ class FacebookPixel
     public function flashEvent(string $eventName, array $parameters = []): void
     {
         $this->flashEventLayer->set($eventName, $parameters);
+    }
+
+    /**
+     * Add event data to the event layer for the next inertia render.
+     */
+    public function inertiaEvent(string $eventName, array $parameters = []): void
+    {
+        $this->inertiaEventLayer->set($eventName, $parameters);
     }
 
     /**
@@ -169,6 +179,14 @@ class FacebookPixel
     public function getFlashedEvent(): array
     {
         return $this->flashEventLayer->toArray();
+    }
+
+    /**
+     * Retrieve custom event layer.
+     */
+    public function getInertiaEvent(): array
+    {
+        return $this->inertiaEventLayer->toArray();
     }
 
     /**
