@@ -174,6 +174,14 @@ class FacebookPixel
     }
 
     /**
+     * Retrieve inertia event layer.
+     */
+    public function getInertiaEventLayer(): EventLayer
+    {
+        return $this->inertiaEventLayer;
+    }
+
+    /**
      * Retrieve the event layer's data for the next request.
      */
     public function getFlashedEvent(): array
@@ -181,13 +189,6 @@ class FacebookPixel
         return $this->flashEventLayer->toArray();
     }
 
-    /**
-     * Retrieve custom event layer.
-     */
-    public function getInertiaEvent(): array
-    {
-        return $this->inertiaEventLayer->toArray();
-    }
 
     /**
      * Retrieve the email to use it advanced matching.
