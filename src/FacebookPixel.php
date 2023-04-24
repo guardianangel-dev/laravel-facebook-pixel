@@ -105,9 +105,9 @@ class FacebookPixel
     }
 
     /**
-     * Add event data to the event layer for the next inertia render.
+     * Add custom event to the inertia event layer.
      */
-    public function inertiaEvent(string $eventName, array $parameters = []): void
+    public function trackInertia(string $eventName, array $parameters = []): void
     {
         $this->inertiaEventLayer->set($eventName, $parameters);
     }
