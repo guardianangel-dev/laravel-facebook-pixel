@@ -9,29 +9,38 @@ use FacebookAds\Object\ServerSide\ActionSource;
 use FacebookAds\Object\ServerSide\CustomData;
 use FacebookAds\Object\ServerSide\Event;
 use FacebookAds\Object\ServerSide\EventRequest;
+use FacebookAds\Object\ServerSide\EventResponse;
 use FacebookAds\Object\ServerSide\UserData;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Request;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Traits\Macroable;
 
 class FacebookPixel
 {
     use Macroable;
 
-    protected bool $enabled;
+    private bool $enabled;
 
-    protected string $pixelId;
+    private string $pixelId;
 
-    protected string $token;
+    private ?string $token;
 
-    protected string $sessionKey;
+    private string $sessionKey;
 
-    protected EventLayer $eventLayer;
+    private ?string $testEventCode;
 
-    protected EventLayer $customEventLayer;
+    private EventLayer $eventLayer;
 
-    protected EventLayer $flashEventLayer;
+    private EventLayer $customEventLayer;
+
+    private EventLayer $flashEventLayer;
+
     protected EventLayer $inertiaEventLayer;
+
+    private UserData $userData;
 
     public function __construct()
     {
@@ -39,15 +48,17 @@ class FacebookPixel
         $this->pixelId = config('facebook-pixel.facebook_pixel_id');
         $this->token = config('facebook-pixel.token');
         $this->sessionKey = config('facebook-pixel.sessionKey');
+        $this->testEventCode = config('facebook-pixel.test_event_code');
         $this->eventLayer = new EventLayer();
         $this->customEventLayer = new EventLayer();
         $this->flashEventLayer = new EventLayer();
         $this->inertiaEventLayer = new EventLayer();
+        $this->userData = new UserData();
     }
 
-    public function pixelId()
+    public function pixelId(): string
     {
-        return $this->pixelId;
+        return (string) $this->pixelId;
     }
 
     public function sessionKey()
@@ -60,7 +71,12 @@ class FacebookPixel
         return $this->token;
     }
 
-    public function isEnabled()
+    public function testEnabled(): bool
+    {
+        return (bool) $this->testEventCode;
+    }
+
+    public function isEnabled(): bool
     {
         return $this->enabled;
     }
@@ -77,31 +93,50 @@ class FacebookPixel
 
     public function setPixelId(int|string $id): void
     {
-        $this->pixelId = $id;
+        $this->pixelId = (string) $id;
     }
 
     /**
      * Add event to the event layer.
      */
-    public function track(string $eventName, array $parameters = []): void
+    public function track(string $eventName, array $parameters = [], string $eventId = null): void
     {
-        $this->eventLayer->set($eventName, $parameters);
+        $this->eventLayer->set($eventName, $parameters, $eventId);
     }
 
     /**
      * Add custom event to the event layer.
      */
-    public function trackCustom(string $eventName, array $parameters = []): void
+    public function trackCustom(string $eventName, array $parameters = [], string $eventId = null): void
     {
-        $this->customEventLayer->set($eventName, $parameters);
+        $this->customEventLayer->set($eventName, $parameters, $eventId);
     }
 
     /**
      * Add event data to the event layer for the next request.
      */
-    public function flashEvent(string $eventName, array $parameters = []): void
+    public function flashEvent(string $eventName, array $parameters = [], string $eventId = null): void
     {
-        $this->flashEventLayer->set($eventName, $parameters);
+        $this->flashEventLayer->set($eventName, $parameters, $eventId);
+    }
+
+    public function userData(): UserData
+    {
+        if ($user = $this->getUser()) {
+            return $this->userData
+                ->setEmail($user['em'])
+                ->setExternalId($user['external_id'])
+                ->setClientIpAddress(Request::ip())
+                ->setClientUserAgent(Request::userAgent())
+                ->setFbc(Arr::get($_COOKIE, '_fbc'))
+                ->setFbp(Arr::get($_COOKIE, '_fbp'));
+        }
+
+        return $this->userData
+            ->setClientIpAddress(Request::ip())
+            ->setClientUserAgent(Request::userAgent())
+            ->setFbc(Arr::get($_COOKIE, '_fbc'))
+            ->setFbp(Arr::get($_COOKIE, '_fbp'));
     }
 
     /**
@@ -115,7 +150,7 @@ class FacebookPixel
     /**
      * Send request using Conversions API
      */
-    public function send(string $eventName, string $sourceUrl, UserData $userData, CustomData $customData)
+    public function send(string $eventName, string $eventID, CustomData $customData, UserData $userData = null): ?EventResponse
     {
         if (! $this->isEnabled()) {
             return null;
@@ -130,15 +165,17 @@ class FacebookPixel
         $event = (new Event())
             ->setEventName($eventName)
             ->setEventTime(time())
-            ->setEventSourceUrl($sourceUrl)
-            ->setUserData($userData)
+            ->setEventId($eventID)
+            ->setEventSourceUrl(URL::current())
+            ->setUserData($userData ?? $this->userData())
             ->setCustomData($customData)
             ->setActionSource(ActionSource::WEBSITE);
 
-        $events = [];
-        array_push($events, $event);
+        $request = (new EventRequest($this->pixelId()))->setEvents([$event]);
 
-        $request = (new EventRequest($this->pixelId()))->setEvents($events);
+        if ($this->testEnabled()) {
+            $request->setTestEventCode($this->testEventCode);
+        }
 
         try {
             return $request->execute();
@@ -152,7 +189,7 @@ class FacebookPixel
     /**
      * Merge array data with the event layer.
      */
-    public function merge(array $eventSession)
+    public function merge(array $eventSession): void
     {
         $this->eventLayer->merge($eventSession);
     }
@@ -194,10 +231,13 @@ class FacebookPixel
      * Retrieve the email to use it advanced matching.
      * To use advanced matching we will get the email if the user is authenticated
      */
-    public function getEmail()
+    public function getUser(): ?array
     {
         if (Auth::check()) {
-            return Auth::user()->email;
+            return [
+                'em' => strtolower(Auth::user()->email),
+                'external_id' => Auth::user()->id,
+            ];
         }
 
         return null;
